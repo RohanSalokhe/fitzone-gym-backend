@@ -1,3 +1,10 @@
+// =====================================================
+// FITZONE GYM MANAGEMENT SYSTEM - BACKEND
+// Railway Ready Backend
+// =====================================================
+
+require("dotenv").config();
+
 const express = require("express");
 const mysql = require("mysql2");
 const bcrypt = require("bcrypt");
@@ -5,23 +12,39 @@ const cors = require("cors");
 
 const app = express();
 
+// =====================================================
+// MIDDLEWARE
+// =====================================================
+
 app.use(express.json());
 app.use(cors());
 
-
-// ===============================
+// =====================================================
 // DATABASE CONNECTION
-// ===============================
+// =====================================================
 
-const db = mysql.createConnection({
-    host: "localhost",
-    user: "root",
-    password: "",
-    database: "gym_management"
+const db = mysql.createPool({
+    host: process.env.MYSQLHOST || "localhost",
+    user: process.env.MYSQLUSER || "root",
+    password: process.env.MYSQLPASSWORD || "",
+    database: process.env.MYSQLDATABASE || "gym_management",
+    port: Number(process.env.MYSQLPORT) || 3306,
+
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 }).promise();
 
-console.log("Database connected successfully...");
-
+// Test database connection
+db.getConnection()
+    .then(connection => {
+        console.log("Database connected successfully...");
+        connection.release();
+    })
+    .catch(err => {
+        console.log("Database connection failed:");
+        console.log(err.message);
+    });
 
 // =====================================================
 // ADMIN REGISTER
@@ -31,7 +54,11 @@ app.post("/register", async (req, res) => {
 
     try {
 
-        const { adminName, email, password } = req.body;
+        const {
+            adminName,
+            email,
+            password
+        } = req.body;
 
         if (!adminName || !email || !password) {
             return res.status(400).json({
@@ -39,7 +66,6 @@ app.post("/register", async (req, res) => {
             });
         }
 
-        // Check existing admin
         const [existingAdmin] = await db.query(
             "SELECT * FROM admins WHERE email = ?",
             [email]
@@ -51,13 +77,17 @@ app.post("/register", async (req, res) => {
             });
         }
 
-        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Insert admin
         await db.query(
-            "INSERT INTO admins (adminName, email, password) VALUES (?, ?, ?)",
-            [adminName, email, hashedPassword]
+            `INSERT INTO admins
+            (adminName, email, password)
+            VALUES (?, ?, ?)`,
+            [
+                adminName,
+                email,
+                hashedPassword
+            ]
         );
 
         res.json({
@@ -66,7 +96,7 @@ app.post("/register", async (req, res) => {
 
     } catch (err) {
 
-        console.log(err);
+        console.log("Admin Register Error:", err);
 
         res.status(500).json({
             error: err.message
@@ -76,7 +106,6 @@ app.post("/register", async (req, res) => {
 
 });
 
-
 // =====================================================
 // ADMIN LOGIN
 // =====================================================
@@ -85,7 +114,10 @@ app.post("/login", async (req, res) => {
 
     try {
 
-        const { email, password } = req.body;
+        const {
+            email,
+            password
+        } = req.body;
 
         if (!email || !password) {
             return res.status(400).json({
@@ -106,7 +138,6 @@ app.post("/login", async (req, res) => {
 
         const admin = admins[0];
 
-        // Compare password
         const isMatch = await bcrypt.compare(
             password,
             admin.password
@@ -127,7 +158,7 @@ app.post("/login", async (req, res) => {
 
     } catch (err) {
 
-        console.log(err);
+        console.log("Admin Login Error:", err);
 
         res.status(500).json({
             error: err.message
@@ -153,19 +184,19 @@ app.post("/members", async (req, res) => {
             plan
         } = req.body;
 
-
-        // Check required fields
-        if (!memberName || !phone || !age || !gender || !plan) {
+        if (
+            !memberName ||
+            !phone ||
+            !age ||
+            !gender ||
+            !plan
+        ) {
 
             return res.status(400).json({
                 message: "All member fields are required"
             });
 
         }
-
-
-        // Insert Member
-        // memberId is AUTO_INCREMENT, so don't insert it manually
 
         const sql = `
             INSERT INTO members
@@ -179,7 +210,6 @@ app.post("/members", async (req, res) => {
             VALUES (?, ?, ?, ?, ?)
         `;
 
-
         const [result] = await db.query(sql, [
             memberName,
             phone,
@@ -188,7 +218,6 @@ app.post("/members", async (req, res) => {
             plan
         ]);
 
-
         res.status(201).json({
 
             message: "Member added successfully",
@@ -196,7 +225,6 @@ app.post("/members", async (req, res) => {
             memberId: result.insertId
 
         });
-
 
     } catch (err) {
 
@@ -209,7 +237,6 @@ app.post("/members", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // GET ALL MEMBERS
@@ -237,7 +264,6 @@ app.get("/members", async (req, res) => {
 
 });
 
-
 // =====================================================
 // GET MEMBER BY ID
 // =====================================================
@@ -246,14 +272,14 @@ app.get("/members/:memberId", async (req, res) => {
 
     try {
 
-        const { memberId } = req.params;
-
+        const {
+            memberId
+        } = req.params;
 
         const [members] = await db.query(
             "SELECT * FROM members WHERE memberId = ?",
             [memberId]
         );
-
 
         if (members.length === 0) {
 
@@ -262,7 +288,6 @@ app.get("/members/:memberId", async (req, res) => {
             });
 
         }
-
 
         res.json(members[0]);
 
@@ -278,7 +303,6 @@ app.get("/members/:memberId", async (req, res) => {
 
 });
 
-
 // =====================================================
 // UPDATE MEMBER
 // =====================================================
@@ -287,8 +311,9 @@ app.put("/members/:memberId", async (req, res) => {
 
     try {
 
-        const { memberId } = req.params;
-
+        const {
+            memberId
+        } = req.params;
 
         const {
             memberName,
@@ -297,7 +322,6 @@ app.put("/members/:memberId", async (req, res) => {
             gender,
             plan
         } = req.body;
-
 
         const sql = `
             UPDATE members
@@ -310,7 +334,6 @@ app.put("/members/:memberId", async (req, res) => {
             WHERE memberId = ?
         `;
 
-
         const [result] = await db.query(sql, [
             memberName,
             phone,
@@ -320,7 +343,6 @@ app.put("/members/:memberId", async (req, res) => {
             memberId
         ]);
 
-
         if (result.affectedRows === 0) {
 
             return res.status(404).json({
@@ -329,11 +351,9 @@ app.put("/members/:memberId", async (req, res) => {
 
         }
 
-
         res.json({
             message: "Member updated successfully"
         });
-
 
     } catch (err) {
 
@@ -347,7 +367,6 @@ app.put("/members/:memberId", async (req, res) => {
 
 });
 
-
 // =====================================================
 // DELETE MEMBER
 // =====================================================
@@ -356,14 +375,14 @@ app.delete("/members/:memberId", async (req, res) => {
 
     try {
 
-        const { memberId } = req.params;
-
+        const {
+            memberId
+        } = req.params;
 
         const [result] = await db.query(
             "DELETE FROM members WHERE memberId = ?",
             [memberId]
         );
-
 
         if (result.affectedRows === 0) {
 
@@ -373,11 +392,9 @@ app.delete("/members/:memberId", async (req, res) => {
 
         }
 
-
         res.json({
             message: "Member deleted successfully"
         });
-
 
     } catch (err) {
 
@@ -390,7 +407,6 @@ app.delete("/members/:memberId", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // ADD PLAN
@@ -408,22 +424,31 @@ app.post("/plans", async (req, res) => {
             description
         } = req.body;
 
-        if (!planId || !planName || !duration || fee === undefined) {
+        if (
+            !planId ||
+            !planName ||
+            !duration ||
+            fee === undefined
+        ) {
+
             return res.status(400).json({
-                message: "Plan ID, Plan Name, Duration and Fee are required"
+                message:
+                    "Plan ID, Plan Name, Duration and Fee are required"
             });
+
         }
 
-        // Check plan ID
         const [existingPlan] = await db.query(
             "SELECT * FROM plans WHERE planId = ?",
             [planId]
         );
 
         if (existingPlan.length > 0) {
+
             return res.status(400).json({
                 message: "Plan ID already exists"
             });
+
         }
 
         const sql = `
@@ -452,6 +477,8 @@ app.post("/plans", async (req, res) => {
 
     } catch (err) {
 
+        console.log("Add Plan Error:", err);
+
         res.status(500).json({
             error: err.message
         });
@@ -459,7 +486,6 @@ app.post("/plans", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // GET ALL PLANS
@@ -477,6 +503,8 @@ app.get("/plans", async (req, res) => {
 
     } catch (err) {
 
+        console.log("Get Plans Error:", err);
+
         res.status(500).json({
             error: err.message
         });
@@ -484,7 +512,6 @@ app.get("/plans", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // GET PLAN BY ID
@@ -494,7 +521,9 @@ app.get("/plans/:planId", async (req, res) => {
 
     try {
 
-        const { planId } = req.params;
+        const {
+            planId
+        } = req.params;
 
         const [plans] = await db.query(
             "SELECT * FROM plans WHERE planId = ?",
@@ -502,14 +531,18 @@ app.get("/plans/:planId", async (req, res) => {
         );
 
         if (plans.length === 0) {
+
             return res.status(404).json({
                 message: "Plan not found"
             });
+
         }
 
         res.json(plans[0]);
 
     } catch (err) {
+
+        console.log("Get Plan Error:", err);
 
         res.status(500).json({
             error: err.message
@@ -519,7 +552,6 @@ app.get("/plans/:planId", async (req, res) => {
 
 });
 
-
 // =====================================================
 // UPDATE PLAN
 // =====================================================
@@ -528,7 +560,9 @@ app.put("/plans/:planId", async (req, res) => {
 
     try {
 
-        const { planId } = req.params;
+        const {
+            planId
+        } = req.params;
 
         const {
             planName,
@@ -556,9 +590,11 @@ app.put("/plans/:planId", async (req, res) => {
         ]);
 
         if (result.affectedRows === 0) {
+
             return res.status(404).json({
                 message: "Plan not found"
             });
+
         }
 
         res.json({
@@ -567,6 +603,8 @@ app.put("/plans/:planId", async (req, res) => {
 
     } catch (err) {
 
+        console.log("Update Plan Error:", err);
+
         res.status(500).json({
             error: err.message
         });
@@ -574,7 +612,6 @@ app.put("/plans/:planId", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // DELETE PLAN
@@ -584,7 +621,9 @@ app.delete("/plans/:planId", async (req, res) => {
 
     try {
 
-        const { planId } = req.params;
+        const {
+            planId
+        } = req.params;
 
         const [result] = await db.query(
             "DELETE FROM plans WHERE planId = ?",
@@ -592,9 +631,11 @@ app.delete("/plans/:planId", async (req, res) => {
         );
 
         if (result.affectedRows === 0) {
+
             return res.status(404).json({
                 message: "Plan not found"
             });
+
         }
 
         res.json({
@@ -603,6 +644,8 @@ app.delete("/plans/:planId", async (req, res) => {
 
     } catch (err) {
 
+        console.log("Delete Plan Error:", err);
+
         res.status(500).json({
             error: err.message
         });
@@ -610,7 +653,6 @@ app.delete("/plans/:planId", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // ADD PAYMENT
@@ -628,22 +670,28 @@ app.post("/payments", async (req, res) => {
             paymentStatus
         } = req.body;
 
-        if (!memberId || amount === undefined) {
+        if (
+            !memberId ||
+            amount === undefined
+        ) {
+
             return res.status(400).json({
                 message: "Member ID and Amount are required"
             });
+
         }
 
-        // Check member
         const [member] = await db.query(
             "SELECT * FROM members WHERE memberId = ?",
             [memberId]
         );
 
         if (member.length === 0) {
+
             return res.status(404).json({
                 message: "Member not found"
             });
+
         }
 
         const sql = `
@@ -662,8 +710,8 @@ app.post("/payments", async (req, res) => {
             memberId,
             amount,
             paymentDate || null,
-            paymentMethod,
-            paymentStatus
+            paymentMethod || null,
+            paymentStatus || "Pending"
         ]);
 
         res.json({
@@ -672,6 +720,8 @@ app.post("/payments", async (req, res) => {
 
     } catch (err) {
 
+        console.log("Add Payment Error:", err);
+
         res.status(500).json({
             error: err.message
         });
@@ -679,7 +729,6 @@ app.post("/payments", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // GET ALL PAYMENTS
@@ -690,7 +739,7 @@ app.get("/payments", async (req, res) => {
     try {
 
         const sql = `
-            SELECT 
+            SELECT
                 p.memberId,
                 m.memberName,
                 p.amount,
@@ -709,6 +758,8 @@ app.get("/payments", async (req, res) => {
 
     } catch (err) {
 
+        console.log("Get Payments Error:", err);
+
         res.status(500).json({
             error: err.message
         });
@@ -716,7 +767,6 @@ app.get("/payments", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // GET PAYMENTS BY MEMBER ID
@@ -726,10 +776,12 @@ app.get("/payments/:memberId", async (req, res) => {
 
     try {
 
-        const { memberId } = req.params;
+        const {
+            memberId
+        } = req.params;
 
         const sql = `
-            SELECT 
+            SELECT
                 p.memberId,
                 m.memberName,
                 p.amount,
@@ -743,11 +795,16 @@ app.get("/payments/:memberId", async (req, res) => {
             ORDER BY p.paymentDate DESC
         `;
 
-        const [payments] = await db.query(sql, [memberId]);
+        const [payments] = await db.query(
+            sql,
+            [memberId]
+        );
 
         res.json(payments);
 
     } catch (err) {
+
+        console.log("Get Member Payments Error:", err);
 
         res.status(500).json({
             error: err.message
@@ -756,7 +813,6 @@ app.get("/payments/:memberId", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // COUNT OF MEMBERS
@@ -782,7 +838,6 @@ app.get("/countofmembers", async (req, res) => {
 
 });
 
-
 // =====================================================
 // COUNT OF PLANS
 // =====================================================
@@ -806,7 +861,6 @@ app.get("/countofplans", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // COUNT OF PAYMENTS
@@ -832,7 +886,6 @@ app.get("/countofpayments", async (req, res) => {
 
 });
 
-
 // =====================================================
 // TOTAL PAYMENT AMOUNT
 // =====================================================
@@ -842,7 +895,8 @@ app.get("/totalpayment", async (req, res) => {
     try {
 
         const [result] = await db.query(
-            "SELECT COALESCE(SUM(amount), 0) AS TOTAL FROM payments"
+            `SELECT COALESCE(SUM(amount), 0) AS TOTAL
+             FROM payments`
         );
 
         res.json(result[0]);
@@ -856,7 +910,6 @@ app.get("/totalpayment", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // CONFIRMED PAYMENTS
@@ -867,7 +920,9 @@ app.get("/countofconfirmedpayments", async (req, res) => {
     try {
 
         const [result] = await db.query(
-            "SELECT COUNT(*) AS TOTAL FROM payments WHERE paymentStatus = 'Confirmed'"
+            `SELECT COUNT(*) AS TOTAL
+             FROM payments
+             WHERE paymentStatus = 'Confirmed'`
         );
 
         res.json(result[0]);
@@ -881,7 +936,6 @@ app.get("/countofconfirmedpayments", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // PENDING PAYMENTS
@@ -892,7 +946,9 @@ app.get("/countofpendingpayments", async (req, res) => {
     try {
 
         const [result] = await db.query(
-            "SELECT COUNT(*) AS TOTAL FROM payments WHERE paymentStatus = 'Pending'"
+            `SELECT COUNT(*) AS TOTAL
+             FROM payments
+             WHERE paymentStatus = 'Pending'`
         );
 
         res.json(result[0]);
@@ -907,7 +963,6 @@ app.get("/countofpendingpayments", async (req, res) => {
 
 });
 
-
 // =====================================================
 // FAILED / CANCELLED PAYMENTS
 // =====================================================
@@ -917,8 +972,8 @@ app.get("/countofcancelledpayments", async (req, res) => {
     try {
 
         const [result] = await db.query(
-            `SELECT COUNT(*) AS TOTAL 
-             FROM payments 
+            `SELECT COUNT(*) AS TOTAL
+             FROM payments
              WHERE paymentStatus IN ('Cancelled', 'Failed')`
         );
 
@@ -933,7 +988,6 @@ app.get("/countofcancelledpayments", async (req, res) => {
     }
 
 });
-
 
 // =====================================================
 // DASHBOARD SUMMARY
@@ -956,17 +1010,29 @@ app.get("/dashboard", async (req, res) => {
         );
 
         const [amount] = await db.query(
-            "SELECT COALESCE(SUM(amount), 0) AS totalAmount FROM payments"
+            `SELECT COALESCE(SUM(amount), 0) AS totalAmount
+             FROM payments`
         );
 
         res.json({
-            totalMembers: members[0].totalMembers,
-            totalPlans: plans[0].totalPlans,
-            totalPayments: payments[0].totalPayments,
-            totalAmount: amount[0].totalAmount
+
+            totalMembers:
+                members[0].totalMembers,
+
+            totalPlans:
+                plans[0].totalPlans,
+
+            totalPayments:
+                payments[0].totalPayments,
+
+            totalAmount:
+                amount[0].totalAmount
+
         });
 
     } catch (err) {
+
+        console.log("Dashboard Error:", err);
 
         res.status(500).json({
             error: err.message
@@ -976,13 +1042,29 @@ app.get("/dashboard", async (req, res) => {
 
 });
 
+// =====================================================
+// HEALTH CHECK
+// =====================================================
+
+app.get("/", (req, res) => {
+
+    res.json({
+        message: "FitZone Gym Management API is running successfully",
+        status: "OK"
+    });
+
+});
 
 // =====================================================
 // SERVER START
 // =====================================================
 
-app.listen(5005, () => {
+const PORT = process.env.PORT || 5005;
 
-    console.log("Gym Management API is running on port 5005...");
+app.listen(PORT, () => {
+
+    console.log(
+        `Gym Management API is running on port ${PORT}...`
+    );
 
 });
