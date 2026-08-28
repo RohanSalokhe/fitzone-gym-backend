@@ -268,7 +268,6 @@ app.post(
 
         let connection;
 
-
         try {
 
             const {
@@ -863,12 +862,6 @@ app.get(
 
 // =====================================================
 // ADMIN CHECK MIDDLEWARE
-// =====================================================
-// IMPORTANT:
-// Frontend must send:
-//
-// Authorization: admin
-//
 // =====================================================
 
 const adminOnly = (
@@ -1744,7 +1737,9 @@ app.post(
 
             if (
                 !memberId ||
-                amount === undefined
+                amount === undefined ||
+                amount === null ||
+                amount === ""
             ) {
 
                 return res.status(400).json({
@@ -1757,12 +1752,16 @@ app.post(
             }
 
 
+            // CHECK MEMBER
+
             const [member] =
                 await db.query(
 
                     `
 
-                    SELECT *
+                    SELECT
+                        memberId,
+                        memberName
 
                     FROM members
 
@@ -1789,41 +1788,56 @@ app.post(
             }
 
 
-            const sql = `
+            // INSERT PAYMENT
 
-                INSERT INTO payments
-                (
-                    memberId,
-                    amount,
-                    paymentDate,
-                    paymentMethod,
-                    paymentStatus
-                )
+            const [result] =
+                await db.query(
 
-                VALUES (?, ?, ?, ?, ?)
+                    `
 
-            `;
+                    INSERT INTO payments
+                    (
+                        memberId,
+                        amount,
+                        paymentDate,
+                        paymentMethod,
+                        paymentStatus
+                    )
+
+                    VALUES (?, ?, ?, ?, ?)
+
+                    `,
+
+                    [
+                        memberId,
+                        amount,
+                        paymentDate || null,
+                        paymentMethod || "Cash",
+                        paymentStatus || "Paid"
+                    ]
+
+                );
 
 
-            await db.query(
-
-                sql,
-
-                [
-                    memberId,
-                    amount,
-                    paymentDate || null,
-                    paymentMethod || null,
-                    paymentStatus || "Pending"
-                ]
-
+            console.log(
+                "Payment Added - Payment ID:",
+                result.insertId
             );
 
 
-            res.json({
+            res.status(201).json({
 
                 message:
-                    "Payment added successfully"
+                    "Payment added successfully",
+
+                paymentId:
+                    result.insertId,
+
+                memberId:
+                    memberId,
+
+                amount:
+                    amount
 
             });
 
@@ -1860,32 +1874,50 @@ app.get(
 
         try {
 
-            const sql = `
-
-                SELECT
-
-                    p.memberId,
-                    m.memberName,
-                    p.amount,
-                    p.paymentDate,
-                    p.paymentMethod,
-                    p.paymentStatus
-
-                FROM payments p
-
-                LEFT JOIN members m
-                    ON p.memberId = m.memberId
-
-                ORDER BY p.paymentDate DESC
-
-            `;
-
-
             const [payments] =
-                await db.query(sql);
+                await db.query(
+
+                    `
+
+                    SELECT
+
+                        p.paymentId AS paymentId,
+
+                        p.memberId AS memberId,
+
+                        m.memberName AS memberName,
+
+                        p.amount AS amount,
+
+                        p.paymentDate AS paymentDate,
+
+                        p.paymentMethod AS paymentMethod,
+
+                        p.paymentStatus AS paymentStatus
+
+                    FROM payments p
+
+                    LEFT JOIN members m
+                        ON p.memberId = m.memberId
+
+                    ORDER BY
+                        p.paymentDate DESC,
+                        p.paymentId DESC
+
+                    `
+
+                );
 
 
-            res.json(payments);
+            console.log(
+                "Payments sent to frontend:",
+                payments
+            );
+
+
+            res.status(200).json(
+                payments
+            );
 
 
         } catch (err) {
@@ -1924,46 +1956,195 @@ app.get(
             } = req.params;
 
 
-            const sql = `
-
-                SELECT
-
-                    p.memberId,
-                    m.memberName,
-                    p.amount,
-                    p.paymentDate,
-                    p.paymentMethod,
-                    p.paymentStatus
-
-                FROM payments p
-
-                LEFT JOIN members m
-                    ON p.memberId = m.memberId
-
-                WHERE p.memberId = ?
-
-                ORDER BY p.paymentDate DESC
-
-            `;
-
-
             const [payments] =
                 await db.query(
 
-                    sql,
+                    `
+
+                    SELECT
+
+                        p.paymentId AS paymentId,
+
+                        p.memberId AS memberId,
+
+                        m.memberName AS memberName,
+
+                        p.amount AS amount,
+
+                        p.paymentDate AS paymentDate,
+
+                        p.paymentMethod AS paymentMethod,
+
+                        p.paymentStatus AS paymentStatus
+
+                    FROM payments p
+
+                    LEFT JOIN members m
+                        ON p.memberId = m.memberId
+
+                    WHERE p.memberId = ?
+
+                    ORDER BY
+                        p.paymentDate DESC,
+                        p.paymentId DESC
+
+                    `,
 
                     [memberId]
 
                 );
 
 
-            res.json(payments);
+            res.status(200).json(
+                payments
+            );
 
 
         } catch (err) {
 
             console.log(
                 "Get Member Payments Error:",
+                err.message
+            );
+
+
+            res.status(500).json({
+
+                error:
+                    err.message
+
+            });
+
+        }
+
+    }
+);
+
+
+// =====================================================
+// DELETE PAYMENT
+// =====================================================
+
+app.delete(
+    "/payments/:paymentId",
+    adminOnly,
+    async (req, res) => {
+
+        try {
+
+            const {
+                paymentId
+            } = req.params;
+
+
+            console.log(
+                "Delete Payment Request ID:",
+                paymentId
+            );
+
+
+            if (
+                !paymentId
+            ) {
+
+                return res.status(400).json({
+
+                    message:
+                        "Payment ID is required"
+
+                });
+
+            }
+
+
+            // CHECK PAYMENT EXISTS
+
+            const [existingPayment] =
+                await db.query(
+
+                    `
+
+                    SELECT
+                        paymentId
+
+                    FROM payments
+
+                    WHERE paymentId = ?
+
+                    `,
+
+                    [paymentId]
+
+                );
+
+
+            if (
+                existingPayment.length === 0
+            ) {
+
+                return res.status(404).json({
+
+                    message:
+                        "Payment not found"
+
+                });
+
+            }
+
+
+            // DELETE PAYMENT
+
+            const [result] =
+                await db.query(
+
+                    `
+
+                    DELETE FROM payments
+
+                    WHERE paymentId = ?
+
+                    `,
+
+                    [paymentId]
+
+                );
+
+
+            if (
+                result.affectedRows === 0
+            ) {
+
+                return res.status(404).json({
+
+                    message:
+                        "Payment not found"
+
+                });
+
+            }
+
+
+            console.log(
+                "Deleted Payment:",
+                paymentId
+            );
+
+
+            res.status(200).json({
+
+                message:
+                    "Payment deleted successfully",
+
+                paymentId:
+                    paymentId
+
+            });
+
+
+        } catch (err) {
+
+            console.log(
+                "Delete Payment Error:",
                 err.message
             );
 
