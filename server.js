@@ -62,43 +62,81 @@ app.post("/register", async (req, res) => {
     try {
 
         const {
+            name,
             adminName,
             email,
-            password
+            password,
+            address,
+            phone
         } = req.body;
 
-        if (!adminName || !email || !password) {
+        // Frontend name किंवा adminName दोन्ही support
+        const finalName = name || adminName;
+
+        // Required fields
+        if (
+            !finalName ||
+            !email ||
+            !password ||
+            !address ||
+            !phone
+        ) {
             return res.status(400).json({
                 message: "All fields are required"
             });
         }
 
+        // Check existing email
         const [existingAdmin] = await db.query(
             "SELECT * FROM admins WHERE email = ?",
             [email]
         );
 
         if (existingAdmin.length > 0) {
+
             return res.status(400).json({
-                message: "Admin already exists"
+                message: "Email already exists"
             });
+
         }
 
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        await db.query(
-            `INSERT INTO admins
-            (adminName, email, password)
-            VALUES (?, ?, ?)`,
-            [
-                adminName,
-                email,
-                hashedPassword
-            ]
+        // Hash password
+        const hashedPassword = await bcrypt.hash(
+            password,
+            10
         );
 
-        res.json({
-            message: "Registration successful"
+        // Insert admin
+        const sql = `
+            INSERT INTO admins
+            (
+                adminName,
+                email,
+                password,
+                address,
+                phone
+            )
+            VALUES (?, ?, ?, ?, ?)
+        `;
+
+        const [result] = await db.query(sql, [
+            finalName,
+            email,
+            hashedPassword,
+            address,
+            phone
+        ]);
+
+        res.status(201).json({
+
+            message: "Registration successful",
+
+            adminId: result.insertId,
+
+            adminName: finalName,
+
+            email: email
+
         });
 
     } catch (err) {
