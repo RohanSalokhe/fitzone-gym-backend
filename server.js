@@ -30,6 +30,13 @@ const db = mysql.createPool({
     database: process.env.MYSQLDATABASE || "gym_management",
     port: Number(process.env.MYSQLPORT) || 3306,
 
+    // SSL only for online Aiven MySQL
+    ...(process.env.MYSQLHOST && {
+        ssl: {
+            rejectUnauthorized: false
+        }
+    }),
+
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
